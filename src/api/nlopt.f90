@@ -904,6 +904,73 @@ contains
 
 end module nlopt
 
+module nlopt_fun
+
+    use iso_c_binding
+    implicit none
+
+    public :: nlopt_fun
+    type, abstract :: nlopt_fun
+        ! user-defined data elements in extensions
+    contains
+        procedure(nlopt_if), deferred, public :: eval
+    end type
+
+    abstract interface
+        real(c_double) function nlopt_if(this,n,x,grad)
+            import nlopt_fun, c_double, c_int
+            class(nlopt_fun), intent(in) :: this
+            integer(c_int), intent(in) :: n
+            real(c_double), intent(in) :: x(n)
+            real(c_double), intent(out), optional :: grad(n)
+        end function
+    end interface
+
+end module
+
+module nlopt_aux
+
+    use iso_c_binding
+    use nlopt_fun
+    implicit none
+
+    type, extends(nlopt_fun) :: p_aux
+    end type
+
+
+contains
+
+    real(c_double) function func_aux(n,x,grad,data)
+        integer(c_int), intent(in) :: n
+        real(c_double), intent(in) :: x(n)
+        real(c_double), intent(out), optional :: grad(n)
+        type(c_ptr), value :: data
+
+        
+    end function
+end module
+
+contains
+
+    real(c_double) function call_feval(n,x,grad,data)
+        integer(c_int), intent(in) :: n
+        real(c_double), intent(in) :: x(n)
+        real(c_double), intent(out), optional :: grad(n)
+
+        type(c_ptr), value :: data
+
+        class(func_data), pointer :: this 
+
+        select type(this)
+            type is ()
+
+                call c_f_pointer(data,this) !FPTR argument to c_f_pointer shall not be polymorphic!
+
+            call_feval = this%feval(n,x,grad)
+    end function
+
+end module
+
 module my_test_problem
 
     use iso_c_binding
