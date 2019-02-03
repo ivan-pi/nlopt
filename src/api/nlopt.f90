@@ -67,8 +67,8 @@ module adaptor_mod
     public :: adaptor, func_aux, mfunc_aux, precond_aux
 
     type :: adaptor
-        class(nlopt_user_func), pointer :: f => null()
-        class(nlopt_user_mfunc), pointer :: mf => null()
+        class(nlopt_user_func),    pointer :: f   => null()
+        class(nlopt_user_mfunc),   pointer :: mf  => null()
         class(nlopt_user_precond), pointer :: pre => null()
     contains
         final :: destroy
@@ -133,8 +133,7 @@ module nlopt
 
     use, intrinsic :: iso_c_binding
     use nlopt_enum
-    use nlopt_c_interface, srand => nlopt_srand, srand_time => nlopt_srand_time, &
-    func => nlopt_func, mfunc => nlopt_mfunc, version => nlopt_version
+    use nlopt_c_interface, func => nlopt_func, mfunc => nlopt_mfunc
 
     use nlopt_user_func_mod
     use adaptor_mod
@@ -143,12 +142,15 @@ module nlopt
     private
 
     public :: opt
-    public :: version, version_major, version_minor, version_bugfix
-    public :: srand, srand_time, algorithm_name
+    public :: nlopt_version, nlopt_version_major, &
+              nlopt_version_minor, nlopt_version_bugfix
+    public :: nlopt_srand, nlopt_srand_time, algorithm_name
 
     ! Expose abstract types in order for the user to extend them!
     public :: nlopt_user_func, nlopt_user_mfunc, nlopt_user_precond
 
+    type, abstract :: nlopt_void
+    end type
 
     type :: opt
         private
@@ -157,7 +159,7 @@ module nlopt
         real(c_double) :: last_optf = huge(1._c_double)
         integer(c_int) :: forced_stop_reason = NLOPT_FORCED_STOP
 
-        type(adaptor), pointer :: objective => null() ! keep objective on Fortran side
+        type(adaptor), pointer :: objective => null() ! keep handle to objective function on Fortran side
         ! type(adaptor_list) :: cons
     contains
 
@@ -262,12 +264,12 @@ module nlopt
 contains
 
     type(opt) function new_opt(a,n)
-        integer(c_int), intent(in) :: a
-        integer(c_int), intent(in) :: n
+        integer(c_int), intent(in) :: a, n
         new_opt%o = nlopt_create(a,n)
         new_opt%last_result = NLOPT_FAILURE
         new_opt%last_optf = huge(new_opt%last_optf)
         new_opt%forced_stop_reason = NLOPT_FORCED_STOP
+        if (.not. c_associated(new_opt%o)) stop "bad allocation"
     end function
 
     ! Copy constructor
@@ -277,22 +279,27 @@ contains
         copy_opt%last_result = f%last_result
         copy_opt%last_optf = f%last_optf
         copy_opt%forced_stop_reason = f%forced_stop_reason
+        if (c_associated(f%o) .and. (.not. c_associated(copy_opt%o))) stop "bad allocation" 
     end function
 
     ! Assignment
     subroutine assign_opt(lhs,rhs)
         class(opt), intent(inout) :: lhs
         class(opt), intent(in) :: rhs
-        call nlopt_destroy(lhs%o)
-        lhs%o = rhs%o ! nlopt_copy leads to a memory leak here?
+        if (c_associated(lhs%o,rhs%o)) return ! self-assignment
+        call destroy(lhs) ! perform finalization
+        lhs%o = nlopt_copy(rhs%o) ! nlopt_copy leads to a memory leak here?
+        if (c_associated(rhs%o) .and. (.not. c_associated(lhs%o))) stop "bad allocation"
         lhs%last_result = rhs%last_result
         lhs%last_optf = rhs%last_optf
         lhs%forced_stop_reason = rhs%forced_stop_reason
+        lhs%objective => rhs%objective ! transfer objective
+        ! constraints
     end subroutine
 
     ! Finalizer/destructor
     subroutine destroy(this)
-        type(opt), intent(inout) :: this
+        type(opt) :: this
 
         ! Fortran handle to objective
         if (associated(this%objective)) then
@@ -333,15 +340,18 @@ contains
 
     integer(c_int) function get_algorithm(this)
         class(opt), intent(in) :: this
+        if (.not. c_associated(this%o)) stop "uninitialized type(nlopt_opt) instance"
         get_algorithm = nlopt_get_algorithm(this%o)
     end function
     function get_algorithm_name(this) result(name)
         class(opt), intent(in) :: this
         character(len=:,kind=c_char), allocatable :: name
+        if (.not. c_associated(this%o)) stop "uninitialized type(nlopt_opt) instance"
         name = algorithm_name(this%get_algorithm())
     end function
     pure integer(c_int) function get_dimension(this)
         class(opt), intent(in) :: this
+        if (.not. c_associated(this%o)) stop "uninitialized type(nlopt_opt) instance"
         get_dimension = nlopt_get_dimension(this%o)
     end function
 
@@ -732,6 +742,7 @@ contains
         end if
     end function
 
+    ! potential memory leak!?
     subroutine set_local_optimizer(this,lo,ires)
         class(opt), intent(inout) :: this
         class(opt), intent(in) :: lo
@@ -803,17 +814,17 @@ contains
     end subroutine
 
 
-    integer(c_int) function version_major() result(major)
+    integer(c_int) function version_major()
         integer(c_int) :: minor, bugfix
-        call version(major,minor,bugfix)
+        call version(version_major,minor,bugfix)
     end function
-    integer(c_int) function version_minor() result(minor)
+    integer(c_int) function version_minor()
         integer(c_int) :: major, bugfix
-        call version(major,minor,bugfix)
+        call version(major,version_minor,bugfix)
     end function
-    integer(c_int) function version_bugfix() result(bugfix)
+    integer(c_int) function version_bugfix()
         integer(c_int) :: major, minor
-        call version(major,minor,bugfix)
+        call version(major,minor,version_bugfix)
     end function
 
     function algorithm_name(a) result(name)
