@@ -95,26 +95,135 @@ contains
     end function
 end module functor_mod
 
+module new_mod
+
+    use, intrinsic :: iso_c_binding
+    use nlopt, only: nlopt_void
+    implicit none
+    private
+
+    public :: my_fdata, my_cdata, msquare, mcubic
+
+    type, extends(nlopt_void) :: my_fdata
+        real(c_double) :: bbb
+    end type
+
+    type, extends(nlopt_void) :: my_cdata
+        real(c_double) :: a, b
+    end type
+
+contains
+
+    real(c_double) function msquare(n,x,grad,data)
+        integer(c_int), intent(in) :: n
+        real(c_double), intent(in) :: x(n)
+        real(c_double), intent(out), optional :: grad(n)
+        class(nlopt_void) :: data
+
+        if (present(grad)) then
+            grad(1) = 0.0_c_double
+            grad(2) = 0.5_c_double/sqrt(x(2))
+        end if
+        msquare = sqrt(x(2))
+    end function
+
+    real(c_double) function mcubic(n,x,grad,data)
+        integer(c_int), intent(in) :: n
+        real(c_double), intent(in) :: x(n)
+        real(c_double), intent(out), optional :: grad(n)
+        class(my_cdata), intent(in) :: data
+        associate(a => data%a, b=>data%b)
+        if (present(grad)) then
+            grad(1) = 3._c_double*a*(a*x(1) + b)**2
+            grad(2) = 0.0_c_double
+        end if
+        mcubic = (a*x(1) + b)**3 - x(2)
+        end associate
+    end function
+end module new_mod
+
 program main
 
     use iso_c_binding
     use my_test_problem, only: myfunc, myconstraint
 
-    use nlopt, only: algorithm_name, version, opt
+    use nlopt, only: algorithm_name, nlopt_version, opt, nlopt_void
 
     use nlopt_c_interface
     
     use nlopt_enum, only : NLOPT_LD_MMA
 
     use functor_mod, only: square, cubic
+    use new_mod, only: my_fdata, msquare
 
     implicit none
 
-
-    call procedural_example
-    call oo_example
+    call new_example
+    ! call procedural_example
+    ! call oo_example
 
 contains
+
+
+
+    subroutine new_example()
+        integer(c_int) :: major, minor, bugfix
+        integer(c_int), parameter :: n = 2
+
+        type(opt) :: myopt
+
+        real(c_double), dimension(n) :: x, lb
+        real(c_double), target :: d1(2), d2(2)
+        integer(c_int) :: ires
+        real(c_double) :: optf
+        
+        type(my_fdata), target :: fdata
+        integer :: i
+
+        print *, "========= NEW EXAMPLE =========="
+
+        call nlopt_version(major,minor,bugfix)
+        print *, "NLopt version ",major,minor,bugfix
+
+        myopt = opt(a=NLOPT_LD_MMA,n=n)
+        print *, "Algorithm = ", myopt%get_algorithm_name()
+        print *, "Dimension = ", myopt%get_dimension()
+
+        lb = [-huge(1.0_c_double),0.0_c_double]
+        call myopt%set_lower_bounds(lb)
+        ! Fortran function to C function pointer
+        ! c_func = c_funloc(myfunc)
+        ! call myopt%set_min_objective(myfunc,c_null_ptr)
+
+        call myopt%set_min_objective(msquare,fdata,ires=ires)
+        print *, "set objective ires = ",ires
+
+        d1 = [2.0_c_double,0.0_c_double]
+        call myopt%add_inequality_constraint(myconstraint,c_loc(d1),tol=1.d-8,ires=ires)
+        if (ires < 0) then
+            write(*,*) "something went wrong"
+            stop myopt%get_errmsg()
+        end if
+
+        d2 = [-1._c_double, 1.0_c_double]
+        call myopt%add_inequality_constraint(myconstraint,c_loc(d2),tol=1.d-8,ires=ires)
+        if (ires < 0) then
+            print *, ires
+            stop myopt%get_errmsg()
+        end if
+
+        call myopt%set_xtol_rel(1.d-4)
+        
+        x = [1.234_c_double,5.678_c_double]
+        ires = myopt%optimize(x,optf)
+
+        if (ires < 0) then
+            print *, "Nlopt failed!"
+        else
+            print *, "Found minimum at ", x
+            print *, "Minimum value = ", optf
+        end if
+    end subroutine
 
     subroutine procedural_example()
 
@@ -134,7 +243,7 @@ contains
 
         print *, "========= PROCEDURAL EXAMPLE =========="
 
-        call version(major,minor,bugfix)
+        call nlopt_version(major,minor,bugfix)
         print *, "NLopt version ",major,minor,bugfix
 
         opt = nlopt_create(NLOPT_LD_MMA,n)
@@ -206,7 +315,7 @@ contains
 
         print *, "========= OO EXAMPLE =========="
 
-        call version(major,minor,bugfix)
+        call nlopt_version(major,minor,bugfix)
         print *, "NLopt version ",major,minor,bugfix
 
         myopt = opt(a=NLOPT_LD_MMA,n=n)

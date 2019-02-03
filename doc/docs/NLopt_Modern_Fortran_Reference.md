@@ -43,6 +43,14 @@ opt = nlopt_opt(algorithm,n)
 
 given an integer `algorithm` (see [NLopt Algorithms]() for possible values, defined in the `nlopt_enums` module) and the dimensionality of the problem (`n`, the number of optimization parameters). Just as in C, the algorithm is specified by constants of the form `NLOPT_MMA`, `NLOPT_COBYLA`, etcetera.
 
+There are also a copy constructor and an assignment operator, both of which make a copy of a given object (equivalent to `nlopt_copy` in the C API):
+
+```Fortran
+
+copt = nlopt_opt(opt) ! copy
+copt = opt !
+```
+
 When you are finished with your object, any associated storage will deallocated automatically by a [final subroutine]() once the `type(nlopt_opt)` object ceases to exist. This subroutine internally makes a call to the C function `nlopt_destroy`.
 
 The algorithm and dimension parameters of the object are immutable (cannot be changed without constructing a new object), but you can query them for a given object by the subroutines:

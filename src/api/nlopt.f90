@@ -149,7 +149,34 @@ module nlopt
     ! Expose abstract types in order for the user to extend them!
     public :: nlopt_user_func, nlopt_user_mfunc, nlopt_user_precond
 
-    type, abstract :: nlopt_void
+    type, abstract, public :: nlopt_void
+    end type
+
+
+    abstract interface
+        real(c_double) function c_func(n,x,grad,data)
+            import c_int, c_double, nlopt_void
+            integer(c_int), intent(in) :: n
+            real(c_double), intent(in) :: x(n)
+            real(c_double), intent(out), optional :: grad(n)
+            class(nlopt_void) :: data
+        end function
+    end interface
+
+    type, private :: nlopt_void_handle
+        class(nlopt_void), pointer :: data => null()
+        procedure(c_func), pointer, nopass :: func => null()
+        type(nlopt_void_handle), pointer :: next => null()
+    ! contains
+        ! final :: destroy_nlopt_void_handle
+    end type
+
+    type, private :: nlopt_void_handle_list
+        integer :: num_nodes
+        type(nlopt_void_handle), pointer :: head => null()
+        type(nlopt_void_handle), pointer :: tail => null()
+    ! contains
+        ! final :: destroy_nlopt_void_handle_list
     end type
 
     type :: opt
@@ -161,6 +188,11 @@ module nlopt
 
         type(adaptor), pointer :: objective => null() ! keep handle to objective function on Fortran side
         ! type(adaptor_list) :: cons
+        type(nlopt_void_handle), pointer :: objective_handle => null()
+        type(nlopt_void_handle_list), pointer :: eq_constraint_list => null()
+        type(nlopt_void_handle_list), pointer :: neq_constraint_list => null()
+        ! type(nlopt_void_handle_list), pointer :: eq_mconstraint_handles => null()
+        ! type(nlopt_void_handle_list), pointer :: neq_mconstraint_handles => null()
     contains
 
         procedure, public :: optimize
@@ -172,13 +204,13 @@ module nlopt
         procedure, public :: get_algorithm_name
         procedure, public :: get_dimension
 
-        procedure, private :: set_min_objective_classic
         procedure, private :: set_min_objective_oo
-        generic, public :: set_min_objective => set_min_objective_classic, set_min_objective_oo
+        procedure, private :: set_min_objective_new
+        generic, public :: set_min_objective => set_min_objective_oo, set_min_objective_new
 
-        procedure, private :: set_max_objective_classic
         procedure, private :: set_max_objective_oo
-        generic, public :: set_max_objective => set_max_objective_classic, set_max_objective_oo
+        procedure, private :: set_max_objective_new
+        generic, public :: set_max_objective => set_max_objective_oo, set_max_objective_new
 
         procedure, public :: remove_inequality_constraints
         procedure, private :: add_inequality_constraint_classic
@@ -261,7 +293,36 @@ module nlopt
         module procedure copy_opt
     end interface
 
+    interface nlopt_void_handle
+        module procedure void_handle_constructor
+    end interface
+
 contains
+
+    function void_handle_constructor(func,data) result(node)
+        procedure(c_func) :: func
+        class(nlopt_void), intent(in), target :: data
+        type(nlopt_void_handle), pointer :: node
+
+        allocate(node)
+        node%func => func
+        node%data => data
+    end function
+
+    subroutine void_handle_list_append(this,func,data)
+        type(nlopt_void_handle_list), intent(inout) :: this
+        procedure(c_func) :: func
+        class(nlopt_void), intent(in), target :: data
+
+        if (associated(this%tail)) then
+            allocate(this%tail%next,source=nlopt_void_handle(func,data))
+            this%tail => this%tail%next
+        else
+            allocate(this%head,source=nlopt_void_handle(func,data))
+            this%tail => this%head
+        end if
+        this%num_nodes = this%num_nodes + 1
+    end subroutine
 
     type(opt) function new_opt(a,n)
         integer(c_int), intent(in) :: a, n
@@ -351,32 +412,66 @@ contains
     end function
     pure integer(c_int) function get_dimension(this)
         class(opt), intent(in) :: this
-        if (.not. c_associated(this%o)) stop "uninitialized type(nlopt_opt) instance"
+        ! if (.not. c_associated(this%o)) stop "uninitialized type(nlopt_opt) instance"
         get_dimension = nlopt_get_dimension(this%o)
     end function
 
     !
     ! Set the objective function
     !
-    subroutine set_min_objective_classic(this,f,f_data,ires)
+    subroutine set_min_objective_new(this,f,f_data,ires)
         class(opt), intent(inout) :: this
-        procedure(func) :: f
-        type(c_ptr), intent(in) :: f_data
+        procedure(c_func) :: f
+        class(nlopt_void), target :: f_data
         integer(c_int), intent(out), optional :: ires
         integer(c_int) :: ret
-        ret = nlopt_set_min_objective(this%o,c_funloc(f),f_data)
-        if (present(ires)) ires = ret
-    end subroutine
-    subroutine set_max_objective_classic(this,f,f_data,ires)
-        class(opt), intent(inout) :: this
-        procedure(func) :: f
-        type(c_ptr), intent(in) :: f_data
-        integer(c_int), intent(out), optional :: ires
-        integer(c_int) :: ret
-        ret = nlopt_set_max_objective(this%o,c_funloc(f),f_data)
-        if (present(ires)) ires = ret
-    end subroutine
 
+        type(c_ptr) :: c_handle
+        type(c_funptr) :: c_fun_handle
+
+        if (associated(this%objective_handle)) then
+            deallocate(this%objective_handle)
+            nullify(this%objective_handle)
+        end if
+        allocate(this%objective_handle)
+        this%objective_handle%func => f
+        this%objective_handle%data => f_data
+
+        c_handle = c_loc(this%objective_handle)
+        c_fun_handle = c_funloc(nlopt_function_poly_c)
+
+        ret = nlopt_set_min_objective(this%o,c_fun_handle,c_handle)
+        if (present(ires)) ires = ret
+    end subroutine
+    subroutine set_max_objective_new(this,f,f_data,ires)
+        class(opt), intent(inout) :: this
+        procedure(c_func) :: f
+        class(nlopt_void), target :: f_data
+        integer(c_int), intent(out), optional :: ires
+        integer(c_int) :: ret
+
+        type(nlopt_void_handle), target :: p_handle
+        type(c_ptr) :: c_handle
+        type(c_funptr) :: c_fun_handle
+
+        p_handle%data => f_data
+        p_handle%func => f
+
+        c_handle = c_loc(p_handle)
+        c_fun_handle = c_funloc(nlopt_function_poly_c)
+
+        ret = nlopt_set_max_objective(this%o,c_fun_handle,c_handle)
+        if (present(ires)) ires = ret
+    end subroutine
+    real(c_double) function nlopt_function_poly_c(n,x,grad,func_data)
+        integer(c_int), intent(in), value :: n
+        real(c_double), intent(in) :: x(n)
+        real(c_double), intent(out), optional :: grad(n)
+        type(c_ptr), value :: func_data
+        type(nlopt_void_handle), pointer :: p_handle
+        call c_f_pointer(func_data,p_handle)
+        nlopt_function_poly_c = p_handle%func(n,x,grad,p_handle%data)
+    end function
     !
     ! Set the objective function (object-oriented way)
     !
@@ -430,6 +525,29 @@ contains
         if (present(tol)) tol_ = tol
 
         ret = nlopt_add_inequality_constraint(this%o,c_funloc(fc),fc_data,tol_)
+        if (present(ires)) ires = ret
+    end subroutine
+    subroutine add_inequality_constraint_new(this,fc,fc_data,tol,ires)
+        class(opt), intent(inout) :: this
+        procedure(c_func) :: fc
+        class(nlopt_void), target :: fc_data
+        real(c_double), optional :: tol
+        integer(c_int), intent(out), optional :: ires
+        real(c_double) :: tol_
+        integer(c_int) :: ret
+
+        type(nlopt_void_handle), pointer :: handle
+        type(c_ptr) :: c_handle
+        type(c_funptr) :: c_fun_handle
+
+        tol_ = 0.0_c_double
+        if (present(tol)) tol_ = tol
+
+        call void_handle_list_append(this%neq_constraint_list,fc,fc_data)
+        c_handle = c_loc(this%neq_constraint_list%tail)
+        c_fun_handle = c_funloc(nlopt_function_poly_c)
+
+        ret = nlopt_add_inequality_constraint(this%o,c_fun_handle,c_handle,tol_)
         if (present(ires)) ires = ret
     end subroutine
     subroutine add_inequality_mconstraint_classic(this,m,fc,fc_data,tol,ires)
@@ -814,17 +932,17 @@ contains
     end subroutine
 
 
-    integer(c_int) function version_major()
+    integer(c_int) function nlopt_version_major()
         integer(c_int) :: minor, bugfix
-        call version(version_major,minor,bugfix)
+        call nlopt_version(nlopt_version_major,minor,bugfix)
     end function
-    integer(c_int) function version_minor()
+    integer(c_int) function nlopt_version_minor()
         integer(c_int) :: major, bugfix
-        call version(major,version_minor,bugfix)
+        call nlopt_version(major,nlopt_version_minor,bugfix)
     end function
-    integer(c_int) function version_bugfix()
+    integer(c_int) function nlopt_version_bugfix()
         integer(c_int) :: major, minor
-        call version(major,minor,version_bugfix)
+        call nlopt_version(major,minor,nlopt_version_bugfix)
     end function
 
     function algorithm_name(a) result(name)
