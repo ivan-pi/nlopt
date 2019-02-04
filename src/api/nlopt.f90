@@ -147,7 +147,7 @@ module void_module
             integer(c_int), intent(in), value :: n
             real(c_double), intent(in) :: x(n)
             real(c_double), intent(out), optional :: grad(n)
-            class(nlopt_void) :: data
+            class(nlopt_void), target :: data
         end function
     end interface
 
@@ -173,7 +173,7 @@ module nlopt
     ! Expose abstract types in order for the user to extend them!
     public :: nlopt_user_func, nlopt_user_mfunc, nlopt_user_precond
 
-    public :: nlopt_void
+    public :: nlopt_void, set_min_objective_new
 
     type, private :: nlopt_void_handle
         class(nlopt_void), pointer :: data => null()
@@ -454,6 +454,7 @@ contains
         ret = nlopt_set_min_objective(this%o,c_fun_handle,c_handle)
         if (present(ires)) ires = ret
     end subroutine
+
     subroutine set_max_objective_new(this,f,f_data,ires)
         class(opt), intent(inout) :: this
         procedure(func_if) :: f

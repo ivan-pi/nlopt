@@ -118,11 +118,14 @@ contains
         real(c_double), intent(in) :: x(n)
         real(c_double), intent(out), optional :: grad(n)
         class(nlopt_void) :: data
-        if (present(grad)) then
-            grad(1) = 0.0_c_double
-            grad(2) = 0.5_c_double/sqrt(x(2))
-        end if
-        msquare = sqrt(x(2))
+        select type(data)
+            type is (my_fdata)
+            if (present(grad)) then
+                grad(1) = 0.0_c_double
+                grad(2) = 0.5_c_double/sqrt(x(2))
+            end if
+            msquare = sqrt(x(2))
+        end select
     end function
 
     real(c_double) function mcubic(n,x,grad,data)
@@ -146,7 +149,7 @@ program main
     use iso_c_binding, only: c_int, c_double, c_char, c_ptr, c_funptr, c_loc, c_funloc
     use my_test_problem, only: myfunc, myconstraint
 
-    use nlopt, only: algorithm_name, nlopt_version, opt, nlopt_void
+    use nlopt, only: algorithm_name, nlopt_version, opt, nlopt_void, set_min_objective_new
 
     use nlopt_c_interface
     
@@ -193,12 +196,9 @@ contains
 
         lb = [-huge(1.0_c_double),0.0_c_double]
         call myopt%set_lower_bounds(lb)
-        ! Fortran function to C function pointer
-        ! c_func = c_funloc(myfunc)
-        ! call myopt%set_min_objective(myfunc,c_null_ptr)
 
         ! allocate(my_fdata::f_data)
-        call myopt%set_max_objective(f=msquare,f_data=f_data,ires=ires)
+        call myopt%set_min_objective_new(msquare,f_data)
         print *, "set objective ires = ",ires
 
         d1 = [2.0_c_double,0.0_c_double]
