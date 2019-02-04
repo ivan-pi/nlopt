@@ -118,18 +118,18 @@ contains
         real(c_double), intent(in) :: x(n)
         real(c_double), intent(out), optional :: grad(n)
         class(nlopt_void) :: data
-        select type(data)
-            type is (my_fdata)
+        ! select type(data)
+            ! type is (my_fdata)
             if (present(grad)) then
                 grad(1) = 0.0_c_double
                 grad(2) = 0.5_c_double/sqrt(x(2))
             end if
             msquare = sqrt(x(2))
-        end select
+        ! end select
     end function
 
     real(c_double) function mcubic(n,x,grad,data)
-        integer(c_int), intent(in) :: n
+        integer(c_int), intent(in), value :: n
         real(c_double), intent(in) :: x(n)
         real(c_double), intent(out), optional :: grad(n)
         class(nlopt_void) :: data
@@ -140,6 +140,8 @@ contains
                     grad(2) = 0.0_c_double
                 end if
                 mcubic = (data%a*x(1) + data%b)**3 - x(2)
+            class default
+                stop "should not be here"
         end select
     end function
 end module new_mod
@@ -202,7 +204,9 @@ contains
         print *, "set objective ires = ",ires
 
         d1 = [2.0_c_double,0.0_c_double]
-        call myopt%add_inequality_constraint(myconstraint,c_loc(d1),tol=1.e-8_c_double,ires=ires)
+        my_cdata1 = my_cdata(2.0_c_double,0.0_c_double)
+        ! call myopt%add_inequality_constraint(myconstraint,c_loc(d1),tol=1.e-8_c_double,ires=ires)
+        call myopt%add_inequality_constraint(mcubic,my_cdata1,tol=1.e-8_c_double,ires=ires)
         if (ires < 0) then
             write(*,*) "something went wrong"
             print*, myopt%get_errmsg()
@@ -210,7 +214,6 @@ contains
         end if
 
         d2 = [-1._c_double, 1.0_c_double]
-        ! call myopt%add_inequality_constraint(constraint,1.d-8,ires)
         call myopt%add_inequality_constraint(myconstraint,c_loc(d2),tol=1.e-8_c_double,ires=ires)
         if (ires < 0) then
             print *, ires

@@ -6,6 +6,8 @@ matrix:
     - os: linux
       addons:
         apt:
+          sources:
+          - ubuntu-toolchain-r-test
           packages:
           - swig
           - python-dev
@@ -19,7 +21,7 @@ matrix:
           - g++-mingw-w64-x86-64
           - gcc-mingw-w64-x86-64
           - binutils-mingw-w64-x86-64
-          - gfortran
+          - gfortran-6
 
       script:
         - pip install mkdocs python-markdown-math --user

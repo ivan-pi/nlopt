@@ -147,7 +147,7 @@ module void_module
             integer(c_int), intent(in), value :: n
             real(c_double), intent(in) :: x(n)
             real(c_double), intent(out), optional :: grad(n)
-            class(nlopt_void), target :: data
+            class(nlopt_void) :: data
         end function
     end interface
 
@@ -230,7 +230,8 @@ module nlopt
         procedure, private :: add_inequality_mconstraint_classic
         procedure, private :: add_inequality_constraint_oo
         procedure, private :: add_inequality_mconstraint_oo
-        generic, public :: add_inequality_constraint => add_inequality_constraint_classic, add_inequality_constraint_oo
+        generic, public :: add_inequality_constraint => add_inequality_constraint_classic, add_inequality_constraint_oo, &
+            add_inequality_constraint_new
 
         procedure, public :: remove_equality_constraints
         procedure, public :: add_equality_constraint_cptr
