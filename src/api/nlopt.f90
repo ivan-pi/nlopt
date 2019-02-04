@@ -88,7 +88,7 @@ contains
         nullify(this%pre)
     end subroutine
 
-    real(c_double) function func_aux(n,x,grad,data)
+    real(c_double) function func_aux(n,x,grad,data) bind(c)
         integer(c_int), intent(in), value :: n
         real(c_double), intent(in) :: x(n)
         real(c_double), intent(out), optional :: grad(n)
@@ -100,7 +100,7 @@ contains
         func_aux = fdata%f%eval(n,x,grad)
     end function
 
-    subroutine mfunc_aux(m,result,n,x,grad,data)
+    subroutine mfunc_aux(m,result,n,x,grad,data) bind(c)
         integer(c_int), intent(in), value :: m
         real(c_double), intent(out) :: result(m)
         integer(c_int), intent(in), value :: n
@@ -114,7 +114,7 @@ contains
         call fdata%mf%eval(m,result,n,x,grad)
     end subroutine
 
-    subroutine precond_aux(n,x,v,vpre,data)
+    subroutine precond_aux(n,x,v,vpre,data) bind(c)
         integer(c_int), intent(in), value :: n
         real(c_double), intent(in) :: x(n)
         real(c_double), intent(in) :: v(n)
@@ -129,14 +129,38 @@ contains
 
 end module
 
+module void_module
+
+    use, intrinsic::iso_c_binding, only: c_int, c_double
+    implicit none
+    private
+
+    public :: func_if
+
+
+    type, abstract, public :: nlopt_void
+    end type
+
+    abstract interface
+        real(c_double) function func_if(n,x,grad,data)
+            import c_int, c_double, nlopt_void
+            integer(c_int), intent(in), value :: n
+            real(c_double), intent(in) :: x(n)
+            real(c_double), intent(out), optional :: grad(n)
+            class(nlopt_void) :: data
+        end function
+    end interface
+
+end module
+
 module nlopt
 
     use, intrinsic :: iso_c_binding
-    use nlopt_enum
+    use nlopt_enum, only: NLOPT_FAILURE, NLOPT_FORCED_STOP
     use nlopt_c_interface, func => nlopt_func, mfunc => nlopt_mfunc
-
-    use nlopt_user_func_mod
-    use adaptor_mod
+    use nlopt_user_func_mod, only: nlopt_user_func, nlopt_user_mfunc, nlopt_user_precond
+    use adaptor_mod, only: adaptor, func_aux, mfunc_aux, precond_aux
+    use void_module, only: nlopt_void, func_if
 
     implicit none
     private
@@ -149,23 +173,11 @@ module nlopt
     ! Expose abstract types in order for the user to extend them!
     public :: nlopt_user_func, nlopt_user_mfunc, nlopt_user_precond
 
-    type, abstract, public :: nlopt_void
-    end type
-
-
-    abstract interface
-        real(c_double) function c_func(n,x,grad,data)
-            import c_int, c_double, nlopt_void
-            integer(c_int), intent(in) :: n
-            real(c_double), intent(in) :: x(n)
-            real(c_double), intent(out), optional :: grad(n)
-            class(nlopt_void) :: data
-        end function
-    end interface
+    public :: nlopt_void
 
     type, private :: nlopt_void_handle
         class(nlopt_void), pointer :: data => null()
-        procedure(c_func), pointer, nopass :: func => null()
+        procedure(func_if), pointer, nopass :: func => null()
         type(nlopt_void_handle), pointer :: next => null()
     ! contains
         ! final :: destroy_nlopt_void_handle
@@ -205,7 +217,7 @@ module nlopt
         procedure, public :: get_dimension
 
         procedure, private :: set_min_objective_oo
-        procedure, private :: set_min_objective_new
+        procedure, public :: set_min_objective_new
         generic, public :: set_min_objective => set_min_objective_oo, set_min_objective_new
 
         procedure, private :: set_max_objective_oo
@@ -294,21 +306,21 @@ module nlopt
         module procedure copy_opt
     end interface
 
-    interface nlopt_void_handle
-        module procedure void_handle_constructor
-    end interface
+    ! interface nlopt_void_handle
+    !     module procedure void_handle_constructor
+    ! end interface
 
 contains
 
-    function void_handle_constructor(func,data) result(node)
-        procedure(c_func) :: func
-        class(nlopt_void), intent(in), target :: data
-        type(nlopt_void_handle), pointer :: node
+    ! function void_handle_constructor(f,data) result(node)
+    !     procedure(func_if) :: f
+    !     class(nlopt_void), intent(in), target :: data
+    !     type(nlopt_void_handle), pointer :: node
 
-        allocate(node)
-        node%func => func
-        node%data => data
-    end function
+    !     allocate(node)
+    !     node%func => f
+    !     node%data => data
+    ! end function
 
     subroutine void_handle_list_append(this,node)
         type(nlopt_void_handle_list), intent(inout) :: this
@@ -374,7 +386,7 @@ contains
     ! Do the optimization
     integer(c_int) function optimize(this,x,opt_f)
         class(opt), intent(inout) :: this
-        real(c_double), intent(inout) :: x(get_dimension(this))
+        real(c_double), intent(inout) :: x(nlopt_get_dimension(this%o))
         real(c_double), intent(inout) :: opt_f
         integer(c_int) :: ret
         
@@ -421,7 +433,7 @@ contains
     !
     subroutine set_min_objective_new(this,f,f_data,ires)
         class(opt), intent(inout) :: this
-        procedure(c_func) :: f
+        procedure(func_if) :: f
         class(nlopt_void), target :: f_data
         integer(c_int), intent(out), optional :: ires
         integer(c_int) :: ret
@@ -430,7 +442,6 @@ contains
         type(c_funptr) :: c_fun_handle
 
         if (associated(this%objective_handle)) then
-            deallocate(this%objective_handle)
             nullify(this%objective_handle)
         end if
         allocate(this%objective_handle)
@@ -445,7 +456,7 @@ contains
     end subroutine
     subroutine set_max_objective_new(this,f,f_data,ires)
         class(opt), intent(inout) :: this
-        procedure(c_func) :: f
+        procedure(func_if) :: f
         class(nlopt_void), target :: f_data
         integer(c_int), intent(out), optional :: ires
         integer(c_int) :: ret
@@ -463,7 +474,7 @@ contains
         ret = nlopt_set_max_objective(this%o,c_fun_handle,c_handle)
         if (present(ires)) ires = ret
     end subroutine
-    real(c_double) function nlopt_function_poly_c(n,x,grad,func_data)
+    real(c_double) function nlopt_function_poly_c(n,x,grad,func_data) bind(c)
         integer(c_int), intent(in), value :: n
         real(c_double), intent(in) :: x(n)
         real(c_double), intent(out), optional :: grad(n)
@@ -529,7 +540,7 @@ contains
     end subroutine
     subroutine add_inequality_constraint_new(this,fc,fc_data,tol,ires)
         class(opt), intent(inout) :: this
-        procedure(c_func) :: fc
+        procedure(func_if) :: fc
         class(nlopt_void), target :: fc_data
         real(c_double), optional :: tol
         integer(c_int), intent(out), optional :: ires
@@ -558,9 +569,9 @@ contains
         integer(c_int), intent(in) :: m
         procedure(mfunc) :: fc
         type(c_ptr), value :: fc_data
-        real(c_double), intent(in), optional :: tol(get_dimension(this))
+        real(c_double), intent(in), optional :: tol(nlopt_get_dimension(this%o))
         integer(c_int), intent(out), optional :: ires
-        real(c_double) :: tol_(get_dimension(this))
+        real(c_double) :: tol_(nlopt_get_dimension(this%o))
         integer(c_int) :: ret
 
         tol_ = 0.0_c_double
@@ -594,9 +605,9 @@ contains
         class(opt), intent(inout) :: this
         integer(c_int), intent(in) :: m
         class(nlopt_user_mfunc), intent(in), target :: fc
-        real(c_double), intent(in), optional :: tol(get_dimension(this))
+        real(c_double), intent(in), optional :: tol(nlopt_get_dimension(this%o))
         integer(c_int), intent(out), optional :: ires
-        real(c_double) :: tol_(get_dimension(this))
+        real(c_double) :: tol_(nlopt_get_dimension(this%o))
         integer(c_int) :: ret
         type(adaptor), pointer :: fc_data => null()
         tol_ = 0.0_c_double
@@ -635,9 +646,9 @@ contains
         integer(c_int), intent(in) :: m
         procedure(mfunc) :: h
         type(c_ptr), value :: h_data
-        real(c_double), optional :: tol(get_dimension(this))
+        real(c_double), optional :: tol(nlopt_get_dimension(this%o))
         integer(c_int), intent(out), optional :: ires
-        real(c_double) :: tol_(get_dimension(this))
+        real(c_double) :: tol_(nlopt_get_dimension(this%o))
         integer(c_int) :: ret
 
         tol_ = 0
@@ -665,8 +676,8 @@ contains
         class(opt), intent(inout) :: this
         integer(c_int), intent(in) :: m
         class(nlopt_user_mfunc), intent(in), target :: h
-        real(c_double), intent(in), optional :: tol(get_dimension(this))
-        real(c_double) :: tol_(get_dimension(this))
+        real(c_double), intent(in), optional :: tol(nlopt_get_dimension(this%o))
+        real(c_double) :: tol_(nlopt_get_dimension(this%o))
         integer(c_int) :: ret
         type(adaptor), pointer :: h_data => null()
         tol_ = 0.0_c_double
@@ -679,7 +690,7 @@ contains
 
     subroutine set_lower_bounds_array(this,lb,ires)
         class(opt), intent(inout) :: this
-        real(c_double), intent(in) :: lb(get_dimension(this))
+        real(c_double), intent(in) :: lb(nlopt_get_dimension(this%o))
         integer(c_int), intent(out), optional :: ires
         integer(c_int) :: ret
         ret = nlopt_set_lower_bounds(this%o,lb)
@@ -695,7 +706,7 @@ contains
     end subroutine
     subroutine get_lower_bounds(this,lb,ires)
         class(opt), intent(in) :: this
-        real(c_double), intent(out) :: lb(get_dimension(this))
+        real(c_double), intent(out) :: lb(nlopt_get_dimension(this%o))
         integer(c_int), intent(out), optional :: ires
         integer(c_int) :: ret
         ret = nlopt_get_lower_bounds(this%o,lb)
@@ -703,7 +714,7 @@ contains
     end subroutine
     subroutine set_upper_bounds_array(this,ub,ires)
         class(opt), intent(inout) :: this
-        real(c_double), intent(in) :: ub(get_dimension(this))
+        real(c_double), intent(in) :: ub(nlopt_get_dimension(this%o))
         integer(c_int), intent(out), optional :: ires
         integer(c_int) :: ret
         ret = nlopt_set_upper_bounds(this%o,ub)
@@ -719,7 +730,7 @@ contains
     end subroutine
     subroutine get_upper_bounds(this,ub,ires)
         class(opt), intent(in) :: this
-        real(c_double), intent(out) :: ub(get_dimension(this))
+        real(c_double), intent(out) :: ub(nlopt_get_dimension(this%o))
         integer(c_int), intent(out), optional :: ires
         integer(c_int) :: ret
         ret = nlopt_get_upper_bounds(this%o,ub)
@@ -780,7 +791,7 @@ contains
     end subroutine
     subroutine set_xtol_abs(this,tol,ires)
         class(opt), intent(inout) :: this
-        real(c_double), intent(in) :: tol(get_dimension(this))
+        real(c_double), intent(in) :: tol(nlopt_get_dimension(this%o))
         integer(c_int), intent(out), optional :: ires
         integer(c_int) :: ret
         ret = nlopt_set_xtol_abs(this%o,tol)
@@ -788,7 +799,7 @@ contains
     end subroutine
     subroutine get_xtol_abs(this,tol,ires)
         class(opt), intent(in) :: this
-        real(c_double), intent(out) :: tol(get_dimension(this))
+        real(c_double), intent(out) :: tol(nlopt_get_dimension(this%o))
         integer(c_int), intent(out), optional :: ires
         integer(c_int) :: ret
         ret = nlopt_get_xtol_abs(this%o,tol)
@@ -901,7 +912,7 @@ contains
 
     subroutine set_default_initial_step(this,x,ires)
         class(opt), intent(inout) :: this
-        real(c_double), intent(in) :: x(get_dimension(this))
+        real(c_double), intent(in) :: x(nlopt_get_dimension(this%o))
         integer(c_int), intent(out), optional :: ires
         integer(c_int) :: ret
         ret = nlopt_set_default_initial_step(this%o,x)
@@ -910,7 +921,7 @@ contains
 
     subroutine set_initial_step_array(this,dx,ires)
         class(opt), intent(inout) :: this
-        real(c_double), intent(in) :: dx(get_dimension(this))
+        real(c_double), intent(in) :: dx(nlopt_get_dimension(this%o))
         integer(c_int), intent(out), optional :: ires
         integer(c_int) :: ret
         ret = nlopt_set_initial_step(this%o,dx)
@@ -926,8 +937,8 @@ contains
     end subroutine
     subroutine get_initial_step(this,x,dx,ires)
         class(opt), intent(in) :: this    
-        real(c_double), intent(in) :: x(get_dimension(this))
-        real(c_double), intent(out) :: dx(get_dimension(this))
+        real(c_double), intent(in) :: x(nlopt_get_dimension(this%o))
+        real(c_double), intent(out) :: dx(nlopt_get_dimension(this%o))
         integer(c_int), intent(out), optional :: ires
         integer(c_int) :: ret
         ret = nlopt_get_initial_step(this%o,x,dx)

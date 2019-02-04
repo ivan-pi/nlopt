@@ -8,7 +8,7 @@ module my_test_problem
 
 contains
 
-    real(c_double) function myfunc(n,x,grad,data)
+    real(c_double) function myfunc(n,x,grad,data) bind(c)
         integer(c_int), intent(in), value :: n
         real(c_double), intent(in) :: x(n)
         real(c_double), intent(out), optional :: grad(n)
@@ -21,7 +21,7 @@ contains
         myfunc = sqrt(x(2))
     end function
 
-    real(c_double) function myconstraint(n,x,gradient,func_data)
+    real(c_double) function myconstraint(n,x,gradient,func_data) bind(c)
         integer(c_int), intent(in), value :: n
         real(c_double), intent(in) :: x(n)
         real(c_double), intent(out), optional :: gradient(n)
@@ -29,7 +29,7 @@ contains
 
         real(c_double), pointer :: d(:), a, b
 
-        call c_f_pointer(func_data,d,[2]) ! unpack data from C pointer
+        call c_f_pointer(func_data,d,shape=[2]) ! unpack data from C pointer
         a => d(1)
         b => d(2)
 
@@ -97,7 +97,7 @@ end module functor_mod
 
 module new_mod
 
-    use, intrinsic :: iso_c_binding
+    use, intrinsic :: iso_c_binding, only: c_int, c_double
     use nlopt, only: nlopt_void
     implicit none
     private
@@ -113,12 +113,11 @@ module new_mod
 
 contains
 
-    real(c_double) function msquare(n,x,grad,data)
-        integer(c_int), intent(in) :: n
+    real(c_double) function msquare(n,x,grad,data) 
+        integer(c_int), intent(in), value :: n
         real(c_double), intent(in) :: x(n)
         real(c_double), intent(out), optional :: grad(n)
         class(nlopt_void) :: data
-
         if (present(grad)) then
             grad(1) = 0.0_c_double
             grad(2) = 0.5_c_double/sqrt(x(2))
@@ -144,7 +143,7 @@ end module new_mod
 
 program main
 
-    use iso_c_binding
+    use iso_c_binding, only: c_int, c_double, c_char, c_ptr, c_funptr, c_loc, c_funloc
     use my_test_problem, only: myfunc, myconstraint
 
     use nlopt, only: algorithm_name, nlopt_version, opt, nlopt_void
@@ -154,6 +153,7 @@ program main
     use nlopt_enum, only : NLOPT_LD_MMA
 
     use functor_mod, only: square, cubic
+
     use new_mod, only: my_fdata, msquare, my_cdata, mcubic
 
     implicit none
@@ -177,9 +177,10 @@ contains
         integer(c_int) :: ires
         real(c_double) :: optf
         
-        type(my_fdata), target :: fdata
-        type(my_cdata), target :: my_cdata1, my_cdata2
-        integer :: i
+        ! class(nlopt_void), allocatable :: f_data
+        type(my_fdata) :: f_data
+        type(my_cdata) :: my_cdata1, my_cdata2
+        integer(c_int) :: i
 
         print *, "========= NEW EXAMPLE =========="
 
@@ -196,31 +197,36 @@ contains
         ! c_func = c_funloc(myfunc)
         ! call myopt%set_min_objective(myfunc,c_null_ptr)
 
-        call myopt%set_min_objective(msquare,fdata,ires=ires)
+        ! allocate(my_fdata::f_data)
+        call myopt%set_max_objective(f=msquare,f_data=f_data,ires=ires)
         print *, "set objective ires = ",ires
 
-        my_cdata1 = my_cdata(2.0_c_double,0.0_c_double)
-        call myopt%add_inequality_constraint_new(mcubic,my_cdata1,tol=1.d-8,ires=ires)
+        d1 = [2.0_c_double,0.0_c_double]
+        call myopt%add_inequality_constraint(myconstraint,c_loc(d1),tol=1.e-8_c_double,ires=ires)
         if (ires < 0) then
             write(*,*) "something went wrong"
-            stop myopt%get_errmsg()
+            print*, myopt%get_errmsg()
+            stop
         end if
 
-        my_cdata2 = my_cdata(-1._c_double, 1.0_c_double)
-        call myopt%add_inequality_constraint_new(mcubic,my_cdata2,tol=1.d-8,ires=ires)
+        d2 = [-1._c_double, 1.0_c_double]
+        ! call myopt%add_inequality_constraint(constraint,1.d-8,ires)
+        call myopt%add_inequality_constraint(myconstraint,c_loc(d2),tol=1.e-8_c_double,ires=ires)
         if (ires < 0) then
             print *, ires
-            stop myopt%get_errmsg()
+            print *, myopt%get_errmsg()
+            stop
         end if
 
-        call myopt%remove_inequality_constraints(ires)
-        print *, "num nodes = ", myopt%neq_constraint_list%num_nodes
-        if (ires < 0) then
-            print *, ires
-            stop myopt%get_errmsg()
-        end if
+        ! call myopt%remove_inequality_constraints(ires)
+        ! print *, "num nodes = ", myopt%neq_constraint_list%num_nodes
+        ! if (ires < 0) then
+        !     print *, ires
+        !     print *, myopt%get_errmsg()
+        !     stop
+        ! end if
 
-        call myopt%set_xtol_rel(1.d-4)
+        call myopt%set_xtol_rel(1.e-4_c_double)
         
         x = [1.234_c_double,5.678_c_double]
         ires = myopt%optimize(x,optf)
@@ -294,7 +300,7 @@ contains
 
         x = [1.234_c_double,5.678_c_double]
         ires = nlopt_optimize(opt,x,optf)
-        print *, ires, nlopt_get_errmsg(opt)
+        print *, ires !nlopt_get_errmsg(opt)
         if (ires < 0) then
             print *, "Nlopt failed!"
         else
@@ -340,20 +346,22 @@ contains
 
 
         d1 = [2.0_c_double,0.0_c_double]
-        call myopt%add_inequality_constraint(myconstraint,c_loc(d1),tol=1.d-8,ires=ires)
+        call myopt%add_inequality_constraint(myconstraint,c_loc(d1),tol=1.e-8_c_double,ires=ires)
         if (ires < 0) then
             write(*,*) "something went wrong"
-            stop myopt%get_errmsg()
+            print*, myopt%get_errmsg()
+            stop
         end if
 
         constraint%a = -1._c_double
         constraint%b = 1.0_c_double
         d2 = [-1._c_double, 1.0_c_double]
         ! call myopt%add_inequality_constraint(constraint,1.d-8,ires)
-        call myopt%add_inequality_constraint(myconstraint,c_loc(d2),tol=1.d-8,ires=ires)
+        call myopt%add_inequality_constraint(myconstraint,c_loc(d2),tol=1.e-8_c_double,ires=ires)
         if (ires < 0) then
             print *, ires
-            stop myopt%get_errmsg()
+            print *, myopt%get_errmsg()
+            stop
         end if
 
         ! pin down memory leak
@@ -383,7 +391,7 @@ contains
         !     end if
         ! end do
 
-        call myopt%set_xtol_rel(1.d-4)
+        call myopt%set_xtol_rel(1.e-4_c_double)
         
         x = [1.234_c_double,5.678_c_double]
         ires = myopt%optimize(x,optf)

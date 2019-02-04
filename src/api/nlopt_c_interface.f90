@@ -7,7 +7,7 @@ module nlopt_c_interface
     abstract interface
 
         real(c_double) function nlopt_func(n,x,gradient,func_data) bind(c)
-            use iso_c_binding, only: c_double, c_int, c_ptr
+            import c_double, c_int, c_ptr
             integer(c_int), intent(in), value :: n
             real(c_double), intent(in) :: x(n)
             real(c_double), intent(out), optional :: gradient(n)
@@ -84,8 +84,8 @@ module nlopt_c_interface
         integer(c_int) function nlopt_set_min_objective(opt,f,f_data) bind(c,name="nlopt_set_min_objective")
             import c_int, c_ptr, c_funptr
             type(c_ptr), value :: opt
-            type(c_funptr), intent(in), value :: f
-            type(c_ptr), intent(in), value :: f_data
+            type(c_funptr), value :: f
+            type(c_ptr), value :: f_data
         end function
         integer(c_int) function nlopt_set_max_objective(opt,f,f_data) bind(c,name="nlopt_set_max_objective")
             import c_int, c_ptr, c_funptr

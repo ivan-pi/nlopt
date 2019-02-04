@@ -18,7 +18,10 @@ if (NOT DEFINED CMAKE_BUILD_TYPE)
   set (CMAKE_BUILD_TYPE Release CACHE STRING "Build type")
 endif ()
 
+set(CMAKE_C_COMPILER "/opt/intel/compilers_and_libraries/linux/bin/intel64/icc")
+set(CMAKE_Fortran_COMPILER "/opt/intel/compilers_and_libraries/linux/bin/intel64/ifort")
 project (nlopt)
+
 
 #==============================================================================
 # version
@@ -228,6 +231,7 @@ if (NLOPT_FORTRAN)
   list (APPEND NLOPT_SOURCES src/api/nlopt.f90 src/api/nlopt_c_interface.f90 src/api/nlopt_enum.f90)
   set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/mod_files)
   install(DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY}/ DESTINATION ${RELATIVE_INSTALL_INCLUDE_DIR})
+  set (CMAKE_Fortran_FLAGS "-warn all ${CMAKE_CXX_FLAGS}")
 endif ()
 
 
