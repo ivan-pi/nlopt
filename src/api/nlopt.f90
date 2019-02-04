@@ -172,7 +172,7 @@ module nlopt
     end type
 
     type, private :: nlopt_void_handle_list
-        integer :: num_nodes
+        integer :: num_nodes = 0
         type(nlopt_void_handle), pointer :: head => null()
         type(nlopt_void_handle), pointer :: tail => null()
     ! contains
@@ -187,10 +187,10 @@ module nlopt
         integer(c_int) :: forced_stop_reason = NLOPT_FORCED_STOP
 
         type(adaptor), pointer :: objective => null() ! keep handle to objective function on Fortran side
-        ! type(adaptor_list) :: cons
+
         type(nlopt_void_handle), pointer :: objective_handle => null()
-        type(nlopt_void_handle_list), pointer :: eq_constraint_list => null()
-        type(nlopt_void_handle_list), pointer :: neq_constraint_list => null()
+        type(nlopt_void_handle_list), public :: eq_constraint_list
+        type(nlopt_void_handle_list), public :: neq_constraint_list
         ! type(nlopt_void_handle_list), pointer :: eq_mconstraint_handles => null()
         ! type(nlopt_void_handle_list), pointer :: neq_mconstraint_handles => null()
     contains
@@ -214,6 +214,7 @@ module nlopt
 
         procedure, public :: remove_inequality_constraints
         procedure, private :: add_inequality_constraint_classic
+        procedure, public :: add_inequality_constraint_new
         procedure, private :: add_inequality_mconstraint_classic
         procedure, private :: add_inequality_constraint_oo
         procedure, private :: add_inequality_mconstraint_oo
@@ -309,16 +310,15 @@ contains
         node%data => data
     end function
 
-    subroutine void_handle_list_append(this,func,data)
+    subroutine void_handle_list_append(this,node)
         type(nlopt_void_handle_list), intent(inout) :: this
-        procedure(c_func) :: func
-        class(nlopt_void), intent(in), target :: data
+        type(nlopt_void_handle), pointer :: node
 
         if (associated(this%tail)) then
-            allocate(this%tail%next,source=nlopt_void_handle(func,data))
+            allocate(this%tail%next,source=node)
             this%tail => this%tail%next
         else
-            allocate(this%head,source=nlopt_void_handle(func,data))
+            allocate(this%head,source=node)
             this%tail => this%head
         end if
         this%num_nodes = this%num_nodes + 1
@@ -543,8 +543,11 @@ contains
         tol_ = 0.0_c_double
         if (present(tol)) tol_ = tol
 
-        call void_handle_list_append(this%neq_constraint_list,fc,fc_data)
-        c_handle = c_loc(this%neq_constraint_list%tail)
+        allocate(handle)
+        handle%func => fc
+        handle%data => fc_data
+        call void_handle_list_append(this%neq_constraint_list,handle)
+        c_handle = c_loc(handle)
         c_fun_handle = c_funloc(nlopt_function_poly_c)
 
         ret = nlopt_add_inequality_constraint(this%o,c_fun_handle,c_handle,tol_)
