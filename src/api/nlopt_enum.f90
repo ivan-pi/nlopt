@@ -17,12 +17,21 @@ module nlopt_enum
     !
     ! nlopt_algorithm
     ! 
-    integer, parameter :: NLOPT_GN_DIRECT = 0
-    integer, parameter :: NLOPT_GN_DIRECT_L = 1
-    integer, parameter :: NLOPT_GN_DIRECT_L_RAND = 2
-    integer, parameter :: NLOPT_GN_DIRECT_NOSCAL = 3
-    integer, parameter :: NLOPT_GN_DIRECT_L_NOSCAL = 4
-    integer, parameter :: NLOPT_GN_DIRECT_L_RAND_NOSCAL = 5
+    ! integer, parameter :: NLOPT_GN_DIRECT = 0
+    ! integer, parameter :: NLOPT_GN_DIRECT_L = 1
+    ! integer, parameter :: NLOPT_GN_DIRECT_L_RAND = 2
+    ! integer, parameter :: NLOPT_GN_DIRECT_NOSCAL = 3
+    ! integer, parameter :: NLOPT_GN_DIRECT_L_NOSCAL = 4
+    ! integer, parameter :: NLOPT_GN_DIRECT_L_RAND_NOSCAL = 5
+
+    enum, bind(c)
+        enumerator :: NLOPT_GN_DIRECT = 0
+        enumerator :: NLOPT_GN_DIRECT_L
+        enumerator :: NLOPT_GN_DIRECT_L_RAND
+        enumerator :: NLOPT_GN_DIRECT_NOSCAL
+        enumerator :: NLOPT_GN_DIRECT_L_NOSCAL
+        enumerator :: NLOPT_GN_DIRECT_L_RAND_NOSCAL
+    end enum
 
     integer, parameter :: NLOPT_GN_ORIG_DIRECT = 6
     integer, parameter :: NLOPT_GN_ORIG_DIRECT_L = 7

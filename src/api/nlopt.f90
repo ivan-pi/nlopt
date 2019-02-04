@@ -165,6 +165,9 @@ module nlopt
     implicit none
     private
 
+    integer, parameter, public :: nlopt_int = c_int
+    integer, parameter, public :: nlopt_double = c_double
+
     public :: opt
     public :: nlopt_version, nlopt_version_major, &
               nlopt_version_minor, nlopt_version_bugfix

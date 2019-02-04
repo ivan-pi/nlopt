@@ -118,14 +118,16 @@ contains
         real(c_double), intent(in) :: x(n)
         real(c_double), intent(out), optional :: grad(n)
         class(nlopt_void) :: data
-        ! select type(data)
-            ! type is (my_fdata)
+        select type(data)
+            class is (my_fdata)
             if (present(grad)) then
                 grad(1) = 0.0_c_double
                 grad(2) = 0.5_c_double/sqrt(x(2))
             end if
             msquare = sqrt(x(2))
-        ! end select
+            class default
+                stop "[msquare] incorrect extension of nlopt_void"
+        end select
     end function
 
     real(c_double) function mcubic(n,x,grad,data)
@@ -134,14 +136,14 @@ contains
         real(c_double), intent(out), optional :: grad(n)
         class(nlopt_void) :: data
         select type(data)
-            type is (my_cdata)
+            class is (my_cdata)
                 if (present(grad)) then
                     grad(1) = 3._c_double*data%a*(data%a*x(1) + data%b)**2
                     grad(2) = 0.0_c_double
                 end if
                 mcubic = (data%a*x(1) + data%b)**3 - x(2)
             class default
-                stop "should not be here"
+                stop "[mcubic] incorrect extension of nlopt_void"
         end select
     end function
 end module new_mod
